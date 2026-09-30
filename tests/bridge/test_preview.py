@@ -38,7 +38,45 @@ class FramingTests(unittest.TestCase):
         self.assertGreater(loc.x, 0, "persp camera should be on +X")
         self.assertLess(loc.y, 0, "persp camera should be on -Y (the front)")
         self.assertGreater(loc.z, 0, "persp camera should be above")
-        self.assertAlmostEqual((forward - (-loc).normalized()).length, 0, places=4)
+        from mathutils import Vector
+
+        # It looks along the fixed front-right-above direction; it is shifted sideways to
+        # centre the subject rather than re-aimed, so it still faces the subject closely.
+        self.assertAlmostEqual((forward - Vector((-1, 1, -0.6)).normalized()).length, 0, places=4)
+        self.assertLess(forward.angle(-loc), 0.1, "persp camera should face the subject")
+
+    def test_persp_fills_the_frame(self):
+        # The perspective view is the most informative one; it must not waste the frame
+        # on a loose bounding sphere, whatever the shape.
+        from bpy_extras.object_utils import world_to_camera_view
+        from mathutils import Vector
+
+        from gb import framing
+
+        sc = bpy.context.scene
+        res = (sc.render.resolution_x, sc.render.resolution_y)
+        sc.render.resolution_x = sc.render.resolution_y = 512  # previews are square
+        data = bpy.data.cameras.new("t_fill")
+        cam = bpy.data.objects.new("t_fill", data)
+        sc.collection.objects.link(cam)
+        try:
+            shapes = {"cube": ((-1, -1, -1), (1, 1, 1)), "wall": ((-6, -0.5, -6), (6, 0.5, 6)),
+                      "bar": ((-8, -0.5, -0.5), (8, 0.5, 0.5))}
+            for shape, (lo, hi) in shapes.items():
+                mins, maxs = Vector(lo), Vector(hi)
+                framing.place_camera(cam, "persp", mins, maxs)
+                bpy.context.view_layer.update()
+                pts = [world_to_camera_view(sc, cam, Vector((x, y, z)))
+                       for x in (lo[0], hi[0]) for y in (lo[1], hi[1]) for z in (lo[2], hi[2])]
+                for p in pts:
+                    self.assertTrue(0 <= p.x <= 1 and 0 <= p.y <= 1 and p.z > 0, f"{shape}: corner outside {tuple(p)}")
+                extent = max(max(p.x for p in pts) - min(p.x for p in pts),
+                             max(p.y for p in pts) - min(p.y for p in pts))
+                self.assertGreater(extent, 0.9, f"{shape}: fills only {extent:.2f} of the frame")
+        finally:
+            sc.render.resolution_x, sc.render.resolution_y = res
+            bpy.data.objects.remove(cam)
+            bpy.data.cameras.remove(data)
 
     def test_axis_views_look_at_center(self):
         expect = {"front": (1, -1), "back": (1, 1), "right": (0, 1), "left": (0, -1),

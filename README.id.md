@@ -4,14 +4,14 @@
 
 [English](README.md)
 
-![Sembilan ikon medis 3D yang dirender Ghostblend dengan Cycles dari satu file .blend produksi](docs/images/medical-icons.png)
+![Yang dilihat agent: sudut depan, kanan, atas, dan perspektif dari sembilan ikon medis dalam solid shading, dikembalikan sebagai satu gambar](docs/images/preview-sheet.png)
 
-*Sembilan ikon dari satu file `.blend` produksi, dikendalikan sepenuhnya lewat
-MCP. Ghostblend membuka file-nya, melaporkan bahwa semua collection produk
-sedang dimatikan, lalu agent menyalakannya satu per satu dan merender
-masing-masing dengan Cycles di GPU, lewat kamera dan lampu milik file itu
-sendiri, sekitar 5 detik per ikon. Tidak ada jendela yang terbuka di layar.
-Latar biru ditambahkan untuk halaman ini.*
+*Yang dilihat agent. Ghostblend membuka file `.blend` produksi berisi sembilan
+ikon medis, agent menyalakan collection-nya dan menata ikon-ikonnya, lalu satu
+panggilan `render_preview` mengembalikan sudut depan, kanan, atas, dan
+perspektif dalam solid shading, seperti quad view di Blender, sebagai satu
+gambar dalam 6,5 detik. Blender berjalan headless sepanjang waktu; tidak ada
+jendela yang terbuka di layar.*
 
 Ghostblend adalah satu file program. Ia berbicara dengan
 [Model Context Protocol](https://modelcontextprotocol.io) lewat stdio, dan di
@@ -542,12 +542,6 @@ panggilan.
 
 ### Melihat dan render
 
-![Empat sudut pandang yang dikembalikan render_preview untuk satu ikon: depan, kanan, atas, dan perspektif](docs/images/preview-sheet.png)
-
-*Yang dilihat agent: satu panggilan `render_preview` mengembalikan empat sudut
-pandang tabung oksigen ini sebagai satu gambar, dalam 2,4 detik di file produksi
-ini.*
-
 | Tool | Fungsinya |
 |---|---|
 | `render_preview` | Gambar cepat yang dikembalikan langsung: bawaannya lembar 2x2 berisi depan, kanan, atas, dan perspektif. `shading` bisa solid, textured, atau rendered; `objects` membingkai sebagian objek saja. Tidak pernah mengubah scene |
@@ -765,7 +759,7 @@ docs/           Spec desain, rencana build, gambar
 |---|---|---|
 | Unit test Rust | `cargo test --lib` | 48 |
 | Supervisor dengan Blender asli | `cargo test --test worker_integration` | 6 |
-| Bridge di dalam Blender, termasuk matriks kemampuan | `blender -b --factory-startup --python tests/bridge/run_tests.py` | 172 |
+| Bridge di dalam Blender, termasuk matriks kemampuan | `blender -b --factory-startup --python tests/bridge/run_tests.py` | 173 |
 | End-to-end lewat MCP | `python tests/e2e/mcp_e2e.py --binary target/release/ghostblend.exe --stage render` | 30 cek |
 
 Tes end-to-end mencakup argumen yang salah, Blender yang tidak ada, panggilan

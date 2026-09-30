@@ -4,13 +4,13 @@
 
 [Bahasa Indonesia](README.id.md)
 
-![Nine medical 3D icons rendered with Cycles by Ghostblend from one production .blend file](docs/images/medical-icons.png)
+![What the agent sees: front, right, top and perspective views of nine medical icons in solid shading, returned as one image](docs/images/preview-sheet.png)
 
-*Nine icons from one production `.blend` file, driven entirely over MCP. Ghostblend
-opened the file, reported that every product collection was switched off, and
-the agent switched them on one at a time and rendered each with Cycles on the
-GPU, through the file's own camera and lights, in about 5 seconds per icon.
-Nothing opened on screen. The blue tiles were added for this page.*
+*What the agent sees. Ghostblend opened a production `.blend` of nine medical
+icons, the agent switched their collections on and laid them out, and one
+`render_preview` call returned front, right, top and perspective views in solid
+shading, like Blender's quad view, as a single image in 6.5 seconds. Blender ran
+headless the whole time; nothing opened on screen.*
 
 Ghostblend is one executable. It speaks the [Model Context Protocol](https://modelcontextprotocol.io)
 on stdio, and behind it runs a full Blender with no window. Your AI agent gets
@@ -534,11 +534,6 @@ the scene. If one fails, the scene rolls back to how it was before the call.
 
 ### Seeing and rendering
 
-![The four views render_preview returns for one icon: front, right, top and perspective](docs/images/preview-sheet.png)
-
-*What the agent sees: one `render_preview` call returns these four views of the
-oxygen tank as a single image, in 2.4 seconds on this production file.*
-
 | Tool | What it does |
 |---|---|
 | `render_preview` | Quick images returned inline: by default a 2x2 sheet of front, right, top and perspective. `shading` is solid, textured or rendered; `objects` frames a subset. Never changes the scene |
@@ -754,7 +749,7 @@ docs/           Design spec, build plan, images
 |---|---|---|
 | Rust unit tests | `cargo test --lib` | 48 |
 | Supervisor against real Blender | `cargo test --test worker_integration` | 6 |
-| Bridge inside Blender, including the capability matrix | `blender -b --factory-startup --python tests/bridge/run_tests.py` | 172 |
+| Bridge inside Blender, including the capability matrix | `blender -b --factory-startup --python tests/bridge/run_tests.py` | 173 |
 | End to end over MCP | `python tests/e2e/mcp_e2e.py --binary target/release/ghostblend.exe --stage render` | 30 checks |
 
 The end-to-end test covers invalid arguments, a missing Blender, parallel calls,

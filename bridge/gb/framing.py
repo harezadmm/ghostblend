@@ -47,6 +47,33 @@ def _ortho_extent(size, look):
     return max(size.x, size.y)  # top/bottom: XY plane
 
 
+def _persp_fit(look, mins, maxs, tan_half, margin=1.08):
+    """Camera position looking along `look` that frames the bbox as tightly as possible.
+
+    With the orientation fixed, "corner c is inside the right edge of the frame" is
+    linear in the camera position P: (c - P) . (right - k*look) <= 0, k = tan_half/margin.
+    Solving each opposite pair of edges exactly gives a camera that is centred on the
+    projected subject and as close as the binding pair allows, so flat, long or tall
+    subjects fill a square frame instead of sitting inside a loose bounding sphere.
+    """
+    rot = look.to_track_quat("-Z", "Y")
+    right, up = rot @ Vector((1, 0, 0)), rot @ Vector((0, 1, 0))
+    k = tan_half / margin
+    corners = [Vector((x, y, z)) for x in (mins.x, maxs.x) for y in (mins.y, maxs.y) for z in (mins.z, maxs.z)]
+
+    def bound(axis):
+        # P . (axis - k*look) must be at least the largest corner . (axis - k*look).
+        n = axis - look * k
+        return max(c.dot(n) for c in corners)
+
+    a_r, a_l, a_t, a_b = bound(right), bound(-right), bound(up), bound(-up)
+    # In the (right, up, look) basis: x - k*z >= a_r and -x - k*z >= a_l, same for y.
+    z = min(-(a_r + a_l) / (2 * k), -(a_t + a_b) / (2 * k))
+    x = (a_r - a_l) / 2
+    y = (a_t - a_b) / 2
+    return right * x + up * y + look * z
+
+
 def place_camera(cam_obj, view, mins, maxs):
     """Aim a camera object at the bounding box for the named view."""
     center = (mins + maxs) / 2
@@ -60,9 +87,9 @@ def place_camera(cam_obj, view, mins, maxs):
         look = Vector((-1, 1, -0.6)).normalized()
         cam.type = "PERSP"
         cam.lens = 50
-        fov = 2 * math.atan(cam.sensor_width / (2 * cam.lens))
-        dist = radius / math.sin(fov / 2) * 1.15
-        cam_obj.location = center - look * dist
+        cam.sensor_fit = "AUTO"
+        cam_obj.location = _persp_fit(look, mins, maxs, cam.sensor_width / (2 * cam.lens))
+        dist = max((center - cam_obj.location).dot(look), 1e-3)
     else:
         look, _up = _VIEWS[view]
         cam.type = "ORTHO"
@@ -70,8 +97,8 @@ def place_camera(cam_obj, view, mins, maxs):
         dist = radius * 3 + 1
         cam_obj.location = center - look * dist
 
-    direction = center - cam_obj.location
-    # The camera's local -Z looks forward and local Y is the top of the frame.
-    cam_obj.rotation_euler = direction.to_track_quat("-Z", "Y").to_euler()
+    # The camera's local -Z looks forward and local Y is the top of the frame. It looks
+    # along `look`; the persp camera is shifted sideways to centre the subject, not re-aimed.
+    cam_obj.rotation_euler = look.to_track_quat("-Z", "Y").to_euler()
     cam.clip_start = max(dist * 0.01, 0.001)
     cam.clip_end = dist * 4 + radius * 4 + 10

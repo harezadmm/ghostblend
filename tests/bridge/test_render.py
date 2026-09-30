@@ -58,6 +58,17 @@ def magic(path, n=4):
         return f.read(n)
 
 
+def corner_rgba(path):
+    """Bottom-left pixel of an image file as RGBA floats."""
+    import bpy
+
+    img = bpy.data.images.load(path, check_existing=False)
+    try:
+        return [round(v, 3) for v in img.pixels[0:4]]
+    finally:
+        bpy.data.images.remove(img)
+
+
 class RenderFormatTests(unittest.TestCase):
     def setUp(self):
         ok("scene_new")
@@ -90,6 +101,29 @@ class RenderFormatTests(unittest.TestCase):
         res = run_job({"output_path": os.path.join(self.out, "x.mp4"), "engine": "workbench"}, "f4")
         self.assertFalse(res["ok"])
         self.assertIn("frame_start", res["error"])
+
+    def _transparent_scene(self):
+        # Like many product files: transparent film over a coloured world.
+        ok("run_python", code=(
+            "bpy.context.scene.render.film_transparent = True\n"
+            "bpy.context.scene.world.color = (0.8, 0.2, 0.2)\n"))
+
+    def test_png_keeps_the_scenes_transparent_film(self):
+        self._transparent_scene()
+        path = os.path.join(self.out, "keep_alpha.png")
+        res = run_job({"output_path": path, "engine": "workbench", "resolution": [32, 32]}, "f6")
+        self.assertTrue(res["ok"], res)
+        self.assertEqual(corner_rgba(path)[3], 0.0, "transparent film lost its alpha")
+
+    def test_transparent_false_shows_the_background(self):
+        self._transparent_scene()
+        path = os.path.join(self.out, "opaque.png")
+        res = run_job({"output_path": path, "engine": "workbench", "resolution": [32, 32],
+                       "transparent": False}, "f7")
+        self.assertTrue(res["ok"], res)
+        rgba = corner_rgba(path)
+        self.assertEqual(rgba[3], 1.0)
+        self.assertGreater(rgba[0], 0.3, f"expected the red world background, got {rgba}")
 
     def test_png_sequence_and_auto_camera(self):
         res = run_job({"output_path": os.path.join(self.out, "seq", "f_"), "engine": "workbench",

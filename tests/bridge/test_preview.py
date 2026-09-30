@@ -91,7 +91,7 @@ class PreviewTests(unittest.TestCase):
         ok("scene_new")
         res = ok("render_preview", size=128, views=["persp"])
         png_size(res["image"])
-        self.assertTrue(any("no mesh" in n.lower() for n in res.get("notes", [])))
+        self.assertTrue(any("no visible objects" in n.lower() for n in res.get("notes", [])))
 
     def test_rendered_shading_eevee(self):
         res = ok("render_preview", size=128, views=["persp"], shading="rendered")
@@ -101,6 +101,60 @@ class PreviewTests(unittest.TestCase):
         res = ok("render_preview", size=128, views=["persp"], engine="cycles")
         png_size(res["image"])
         self.assertEqual(res["engine"], "CYCLES")
+
+
+# Production files often keep assets in collections that are excluded from the view
+# layer, switched on one at a time for rendering. Nested, like "Medical > Crutch".
+_EXCLUDED_SCENE = """
+group = bpy.data.collections.new("Group")
+props = bpy.data.collections.new("Props")
+bpy.context.scene.collection.children.link(group)
+group.children.link(props)
+bpy.ops.mesh.primitive_monkey_add(location=(0, 0, 0))
+m = bpy.context.object
+m.name = "Hidden"
+for c in list(m.users_collection):
+    c.objects.unlink(m)
+props.objects.link(m)
+bpy.context.view_layer.layer_collection.children["Group"].exclude = True
+"""
+
+
+class ExcludedCollectionTests(unittest.TestCase):
+    def setUp(self):
+        ok("scene_new")
+        ok("run_python", code=_EXCLUDED_SCENE)
+
+    def test_scene_info_says_excluded_objects_do_not_render(self):
+        info = ok("scene_info")
+        hidden = next(o for o in info["objects"] if o["name"] == "Hidden")["hidden"]
+        self.assertTrue(hidden["viewport"])
+        self.assertTrue(hidden["render"])
+        self.assertIn("Group", hidden["reason"])
+        group = next(c for c in info["collections"] if c["name"] == "Group")
+        self.assertTrue(group["excluded"])
+        self.assertTrue(any("Group" in n and "excluded" in n for n in info["notes"]))
+
+    def test_preview_frames_only_visible_objects(self):
+        ok("add_primitive", type="cube", name="Shown", size=1, location=[10, 0, 0])
+        res = ok("render_preview", size=64, views=["front"])
+        self.assertAlmostEqual(res["bbox"]["min"][0], 9.5, places=2)
+        self.assertAlmostEqual(res["bbox"]["max"][0], 10.5, places=2)
+
+    def test_preview_frames_visible_text_and_curves(self):
+        ok("run_python", code=(
+            "bpy.ops.object.text_add(location=(10, 0, 0))\n"
+            "bpy.context.object.name = 'Label'\n"))
+        res = ok("render_preview", size=64, views=["front"])
+        self.assertGreater(res["bbox"]["min"][0], 9.0)
+        self.assertFalse(any("no visible objects" in n.lower() for n in res.get("notes", [])))
+
+    def test_preview_explains_when_nothing_is_visible(self):
+        res = ok("render_preview", size=64, views=["front"])
+        notes = " ".join(res.get("notes", []))
+        self.assertIn("no visible objects", notes.lower())
+        self.assertIn("Group", notes)
+        self.assertIn("exclude", notes)
 
 
 if __name__ == "__main__":

@@ -10,7 +10,7 @@ import time
 import bpy
 import numpy as np
 
-from . import font, framing, history, registry, util
+from . import font, framing, history, registry, scene as scene_mod, util
 
 _GRID = {1: (1, 1), 2: (2, 1), 3: (2, 2), 4: (2, 2)}
 _GUTTER = 6
@@ -102,8 +102,15 @@ def _save_canvas(canvas, path):
         bpy.data.images.remove(out)
 
 
-def _visible_meshes():
-    return [o for o in bpy.context.scene.objects if o.type == "MESH" and o.visible_get()]
+# Object types that draw geometry in a render; cameras, lights and empties do not.
+_GEOMETRY = {"MESH", "CURVE", "SURFACE", "META", "FONT", "CURVES", "POINTCLOUD", "VOLUME",
+             "GREASEPENCIL", "GPENCIL"}
+
+
+def _rendered_geometry(state):
+    """Objects the preview will actually draw: render visibility, not viewport visibility."""
+    return [o for o in bpy.context.scene.objects
+            if o.type in _GEOMETRY and scene_mod.object_layer(o, state)["renders"]]
 
 
 @registry.command("render_preview")
@@ -117,10 +124,16 @@ def render_preview(args):
     transparent = bool(args.get("transparent", False))
     wireframe = bool(args.get("wireframe", False))
 
+    state = scene_mod.layer_state()
+    notes = []
     if args.get("objects"):
         targets = [util.get_object(n) for n in args["objects"]]
+        unseen = [o.name for o in targets if not scene_mod.object_layer(o, state)["renders"]]
+        if unseen:
+            notes.append(f"Hidden in renders, so not in the image: {', '.join(unseen)}. "
+                         "scene_info shows why.")
     else:
-        targets = _visible_meshes() or list(sc.objects)
+        targets = _rendered_geometry(state)
     mins, maxs, had = framing.scene_bbox(targets)
 
     snap = _snapshot()
@@ -129,7 +142,6 @@ def render_preview(args):
 
     temp_objs = []
     temp_light = None
-    notes = []
     used_engine = _engine_for(shading, engine)
     try:
         sc.render.engine = used_engine
@@ -190,7 +202,9 @@ def render_preview(args):
         _restore(snap)
 
     if not had:
-        notes.append("The scene has no mesh objects to frame; showing an empty view.")
+        why = scene_mod.excluded_note(state, list(sc.objects))
+        notes.append("The scene has no visible objects to frame; showing an empty view."
+                     + (" " + why if why else ""))
     result = {
         "image": out_path,
         "views": views,

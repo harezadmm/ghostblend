@@ -40,7 +40,61 @@ def world_bbox(o):
     return mn, mx
 
 
-def obj_summary(o):
+def layer_state():
+    """How the active view layer treats each collection, keyed by name_full.
+
+    Each entry has `exclude` (its own outliner checkbox), `excluded_by` (the
+    outermost excluded collection above or at it, or None) and `renders`. An
+    excluded collection takes its objects, and all nested collections, out of both
+    the viewport and renders; production files often switch assets on this way.
+    """
+    state = {}
+
+    def walk(lc, path, excluder, renders):
+        for ch in lc.children:
+            coll = ch.collection
+            here = path + [coll.name]
+            exc = excluder or (coll.name if ch.exclude else None)
+            ren = exc is None and renders and not coll.hide_render
+            prev = state.get(coll.name_full)
+            if prev is None or (prev["excluded_by"] and not exc):
+                state[coll.name_full] = {"exclude": ch.exclude, "excluded_by": exc, "renders": ren, "path": here}
+            elif ren:
+                prev["renders"] = True
+            walk(ch, here, exc, ren)
+
+    root = bpy.context.view_layer.layer_collection
+    state[root.collection.name_full] = {"exclude": False, "excluded_by": None, "renders": True, "path": []}
+    walk(root, [], None, True)
+    return state
+
+
+def object_layer(o, state):
+    """Whether `o` is in the view layer and renders, merged over all its collections."""
+    entries = [state[c.name_full] for c in o.users_collection if c.name_full in state]
+    included = any(e["excluded_by"] is None for e in entries)
+    excluded_by = None if included else next((e["excluded_by"] for e in entries), None)
+    return {"excluded_by": excluded_by,
+            "renders": not o.hide_render and any(e["renders"] for e in entries)}
+
+
+def excluded_note(state, objects):
+    """One sentence on objects kept out by excluded collections, or None."""
+    hidden = [o for o in objects if object_layer(o, state)["excluded_by"]]
+    if not hidden:
+        return None
+    colls = [e for e in state.values() if e["exclude"]]
+    names = ", ".join(repr(e["path"][-1]) for e in colls[:12])
+    if len(colls) > 12:
+        names += f" and {len(colls) - 12} more"
+    first = "".join(f".children[{n!r}]" for n in colls[0]["path"])
+    return (f"{len(hidden)} objects are in collections excluded from the view layer ({names}), "
+            "so they do not render or show in previews. To include one, set exclude = False on its "
+            f"layer collection, e.g. bpy.context.view_layer.layer_collection{first}.exclude = False "
+            "(a nested collection also needs its excluded parents included).")
+
+
+def obj_summary(o, state=None):
     d = {
         "name": o.name,
         "type": o.type,
@@ -51,9 +105,15 @@ def obj_summary(o):
     }
     if o.parent:
         d["parent"] = o.parent.name
+    layer = object_layer(o, state if state is not None else layer_state())
     hidden_viewport = o.hide_viewport or not o.visible_get()
-    if hidden_viewport or o.hide_render:
-        d["hidden"] = {"viewport": hidden_viewport, "render": o.hide_render}
+    hidden_render = not layer["renders"]
+    if hidden_viewport or hidden_render:
+        d["hidden"] = {"viewport": hidden_viewport, "render": hidden_render}
+        if layer["excluded_by"]:
+            d["hidden"]["reason"] = f"collection {layer['excluded_by']!r} is excluded from the view layer"
+        elif hidden_render and not o.hide_render:
+            d["hidden"]["reason"] = "its collection is disabled in renders"
     if o.type == "MESH" and o.data is not None:
         d["mesh"] = {"verts": len(o.data.vertices), "faces": len(o.data.polygons)}
     mats = [s.material.name if s.material else None for s in o.material_slots]
@@ -69,12 +129,17 @@ def obj_summary(o):
     return d
 
 
-def _collection_tree(coll, depth=0):
+def _collection_tree(coll, state, depth=0):
     out = []
     for child in coll.children:
         node = {"name": child.name, "objects": len(child.objects)}
+        entry = state.get(child.name_full)
+        if entry is not None and entry["exclude"]:
+            node["excluded"] = True
+        if child.hide_render:
+            node["hide_render"] = True
         if depth < 4 and len(child.children):
-            node["children"] = _collection_tree(child, depth + 1)
+            node["children"] = _collection_tree(child, state, depth + 1)
         out.append(node)
     return out
 
@@ -112,12 +177,13 @@ def missing_files():
 def scene_summary(limit=200):
     sc = bpy.context.scene
     objs = list(sc.objects)
+    state = layer_state()
     d = {
         "file": history.S["logical_path"],
         "unsaved_changes": history.unsaved_changes(),
         "scene": sc.name,
         "objects_total": len(objs),
-        "objects": [obj_summary(o) for o in objs[:limit]],
+        "objects": [obj_summary(o, state) for o in objs[:limit]],
     }
     if len(objs) > limit:
         d["objects_truncated"] = f"showing {limit} of {len(objs)}; pass a higher limit or use object_info"
@@ -133,9 +199,12 @@ def scene_summary(limit=200):
     d["world"] = _world_summary(sc.world)
     us = sc.unit_settings
     d["units"] = {"system": us.system, "scale_length": r(us.scale_length), "length_unit": us.length_unit}
-    tree = _collection_tree(sc.collection)
+    tree = _collection_tree(sc.collection, state)
     if tree:
         d["collections"] = tree
+    note = excluded_note(state, objs)
+    if note:
+        d["notes"] = [note]
     d["datablocks"] = {
         "meshes": len(bpy.data.meshes), "materials": len(bpy.data.materials),
         "images": len(bpy.data.images), "node_groups": len(bpy.data.node_groups),

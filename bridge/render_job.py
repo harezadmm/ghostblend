@@ -104,8 +104,9 @@ def _apply(scene, a):
         scene.render.resolution_x, scene.render.resolution_y = int(a["resolution"][0]), int(a["resolution"][1])
     if a.get("percentage"):
         scene.render.resolution_percentage = int(a["percentage"])
-    if a.get("transparent"):
-        scene.render.film_transparent = True
+    # Omitted keeps the file's own setting; product files are often transparent.
+    if a.get("transparent") is not None:
+        scene.render.film_transparent = bool(a["transparent"])
     samples = a.get("samples")
     if samples:
         if scene.render.engine == "CYCLES":
@@ -162,7 +163,7 @@ def main():
     try:
         if fmt == "mp4" and not animation:
             raise ValueError("an mp4 video needs frame_start and frame_end")
-        _set_format(scene, fmt, bool(args.get("transparent")))
+        _set_format(scene, fmt, scene.render.film_transparent)
         if animation:
             scene.frame_start = int(args["frame_start"])
             scene.frame_end = int(args["frame_end"])

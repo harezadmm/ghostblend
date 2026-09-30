@@ -4,11 +4,14 @@
 
 [English](README.md)
 
-![Empat sudut pandang scene yang dibuat agent lewat Ghostblend, dikembalikan sebagai satu gambar](docs/images/preview-sheet.png)
+![Sembilan ikon medis 3D yang dirender Ghostblend dengan Cycles dari satu file .blend produksi](docs/images/medical-icons.png)
 
-*Agent membuat scene ini dengan sepuluh panggilan tool, lalu menerima empat
-sudut pandang ini sebagai satu gambar dalam 1,5 detik. Tidak ada jendela yang
-terbuka di layar.*
+*Sembilan ikon dari satu file `.blend` produksi, dikendalikan sepenuhnya lewat
+MCP. Ghostblend membuka file-nya, melaporkan bahwa semua collection produk
+sedang dimatikan, lalu agent menyalakannya satu per satu dan merender
+masing-masing dengan Cycles di GPU, lewat kamera dan lampu milik file itu
+sendiri, sekitar 5 detik per ikon. Tidak ada jendela yang terbuka di layar.
+Latar biru ditambahkan untuk halaman ini.*
 
 Ghostblend adalah satu file program. Ia berbicara dengan
 [Model Context Protocol](https://modelcontextprotocol.io) lewat stdio, dan di
@@ -539,6 +542,12 @@ panggilan.
 
 ### Melihat dan render
 
+![Empat sudut pandang yang dikembalikan render_preview untuk satu ikon: depan, kanan, atas, dan perspektif](docs/images/preview-sheet.png)
+
+*Yang dilihat agent: satu panggilan `render_preview` mengembalikan empat sudut
+pandang tabung oksigen ini sebagai satu gambar, dalam 2,4 detik di file produksi
+ini.*
+
 | Tool | Fungsinya |
 |---|---|
 | `render_preview` | Gambar cepat yang dikembalikan langsung: bawaannya lembar 2x2 berisi depan, kanan, atas, dan perspektif. `shading` bisa solid, textured, atau rendered; `objects` membingkai sebagian objek saja. Tidak pernah mengubah scene |
@@ -707,6 +716,7 @@ dipakai dan apakah mesin itu bisa menyala dan render.
 | "Blender executable not found at ..." | Path di `--blender` atau `GHOSTBLEND_BLENDER` salah. Perbaiki, atau hapus supaya mesin bawaan dipakai |
 | "cannot download its engine automatically on this platform" | Di macOS, instal Blender 4.2+ lalu pakai `--blender` |
 | Perintah "timed out" | Blender sudah dinyalakan ulang dan scene kamu dipulihkan. Pakai `checkpoint_list` untuk melihat posisimu |
+| Preview atau render dari file yang dibuka kosong | File itu menyimpan objeknya di collection yang di-exclude dari view layer, cara umum untuk menyalakan aset satu per satu saat render. Catatan di `scene_info` dan `render_preview` menyebut collection itu dan memberi baris kode untuk menyalakannya |
 | Blender versi lama yang terpakai | Versi di bawah 4.2 dilewati. Pakai `--runtime managed` supaya selalu memakai mesin bawaan |
 | Butuh detail | Jalankan dengan `GHOSTBLEND_LOG=debug`, atau `--log-file ghostblend.log` |
 
@@ -755,7 +765,7 @@ docs/           Spec desain, rencana build, gambar
 |---|---|---|
 | Unit test Rust | `cargo test --lib` | 48 |
 | Supervisor dengan Blender asli | `cargo test --test worker_integration` | 6 |
-| Bridge di dalam Blender, termasuk matriks kemampuan | `blender -b --factory-startup --python tests/bridge/run_tests.py` | 166 |
+| Bridge di dalam Blender, termasuk matriks kemampuan | `blender -b --factory-startup --python tests/bridge/run_tests.py` | 172 |
 | End-to-end lewat MCP | `python tests/e2e/mcp_e2e.py --binary target/release/ghostblend.exe --stage render` | 30 cek |
 
 Tes end-to-end mencakup argumen yang salah, Blender yang tidak ada, panggilan

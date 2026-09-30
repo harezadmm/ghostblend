@@ -314,3 +314,17 @@ Keputusan:
 | `scene_new` memberi LineStyle ke lineset Freestyle | Scene kosong baru kehilangan linestyle sehingga Freestyle tidak menggambar apa pun |
 
 Jumlah tool menjadi 32. Verifikasi di mesin ini: unit test Rust 48, integrasi supervisor 6, tes bridge 166, E2E 30 cek, clippy tanpa peringatan.
+
+## 21. Uji dengan file produksi (ditambahkan 2026-09-30)
+
+Permintaan pengguna: gambar preview di repo memakai `medical.blend`, file produksi berisi sembilan ikon medis 3D. Membuka file ini lewat Ghostblend menemukan tiga bug yang tidak muncul di scene buatan tes.
+
+| Temuan | Akar masalah | Perbaikan |
+|---|---|---|
+| Preview kosong tanpa penjelasan | Semua collection produk di-exclude dari view layer, cara artis menyalakan aset satu per satu. `_visible_meshes()` kosong lalu jatuh ke semua objek, termasuk yang tidak dirender, jadi framing mengarah ke ruang kosong dan catatan "tidak ada objek" tidak muncul | Framing memakai visibilitas render (`layer_state` + `object_layer`), semua tipe geometri (mesh, curve, teks, metaball, dll.); kalau tidak ada yang terlihat, catatan menyebut collection yang di-exclude dan baris kode untuk menyalakannya |
+| `scene_info` bilang objek akan dirender | `hidden.render` hanya membaca `o.hide_render`, padahal collection yang di-exclude atau `hide_render` juga menyembunyikannya | `hidden.render` dari visibilitas render yang sebenarnya, ditambah `reason`; pohon collection menandai `excluded` dan `hide_render`; `notes` di tingkat scene |
+| Render berlatar hitam | `render_job.py` membaca `transparent` sebagai bool: `false` tidak mematikan film transparan milik file, dan PNG ditulis RGB sehingga alpha hilang | `transparent` tiga keadaan: tidak diberi berarti ikut file; `color_mode` PNG mengikuti `film_transparent` yang berlaku |
+
+Tes regresi memakai scene sintetis dengan collection bersarang yang di-exclude (`tests/bridge/test_preview.py`, `test_render.py`), jadi file milik pengguna tidak ikut masuk repo. Hasil: tes bridge 172, E2E 30, unit Rust 48, supervisor 6, clippy bersih.
+
+Gambar README: sembilan render Cycles GPU (sekitar 5 detik per ikon, 640 px) lewat kamera dan lampu file itu sendiri, disusun di atas latar biru untuk halaman; preview empat sudut adalah keluaran `render_preview` apa adanya (2,4 detik).

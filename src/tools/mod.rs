@@ -54,11 +54,11 @@ mod tests {
     use std::collections::HashSet;
 
     #[test]
-    fn registry_has_25_unique_tools() {
+    fn registry_has_32_unique_tools() {
         let reg = registry();
-        assert_eq!(reg.len(), 25, "expected 25 tools");
+        assert_eq!(reg.len(), 32, "expected 32 tools");
         let names: HashSet<_> = reg.iter().map(|t| t.name).collect();
-        assert_eq!(names.len(), 25, "tool names must be unique");
+        assert_eq!(names.len(), 32, "tool names must be unique");
     }
 
     #[test]

@@ -16,6 +16,12 @@ def reset_scene(empty=True):
         world = bpy.data.worlds.new("World")
         world.color = (0.05, 0.05, 0.05)
         sc.world = world
+    # An empty factory scene keeps its Freestyle line sets but drops their line
+    # style, which makes Freestyle fail silently at render time. Give them one.
+    for vl in sc.view_layers:
+        for lineset in vl.freestyle_settings.linesets:
+            if lineset.linestyle is None:
+                lineset.linestyle = bpy.data.linestyles.get("LineStyle") or bpy.data.linestyles.new("LineStyle")
 
 
 def rotation_deg(o):

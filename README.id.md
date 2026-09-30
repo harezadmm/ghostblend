@@ -13,8 +13,8 @@ terbuka di layar.*
 Ghostblend adalah satu file program. Ia berbicara dengan
 [Model Context Protocol](https://modelcontextprotocol.io) lewat stdio, dan di
 belakangnya berjalan Blender seutuhnya tanpa jendela. AI agent kamu mendapat
-tool bertipe untuk membangun scene, mengedit mesh, memberi material, impor dan
-ekspor model, serta render, dan agent bisa melihat hasil kerjanya sebagai
+tool bertipe untuk modelling, sculpting, painting, lighting, animasi, bake,
+impor dan ekspor, serta render, dan agent bisa melihat hasil kerjanya sebagai
 gambar. Kamu tidak perlu menginstal Blender, membukanya, atau memasang addon.
 
 ---
@@ -25,6 +25,7 @@ gambar. Kamu tidak perlu menginstal Blender, membukanya, atau memasang addon.
 - [Apa yang bisa dilakukan agent](#apa-yang-bisa-dilakukan-agent)
 - [Mulai cepat](#mulai-cepat)
 - [Menyambungkan ke agent](#menyambungkan-ke-agent)
+- [Cakupan fitur Blender](#cakupan-fitur-blender)
 - [Referensi tool](#referensi-tool)
 - [Cara kerjanya](#cara-kerjanya)
 - [Mesin Blender](#mesin-blender)
@@ -123,8 +124,10 @@ Pemakaian umum:
   menerapkan modifier; decimate; validasi sebelum dikirim ke game engine.
 - **Persiapan cetak 3D:** menemukan edge non-manifold, lubang, normal terbalik,
   dan skala yang belum di-apply, lalu ekspor STL.
-- **Modelling prosedural dari teks:** membangun scene dari primitif dan modifier,
-  lalu memperbaikinya sambil melihat preview.
+- **Modelling prosedural dari teks:** membangun scene dari primitif, operasi
+  Edit Mode, dan modifier, lalu memperbaikinya sambil melihat preview.
+- **Sculpting dan painting:** membentuk objek organik dengan brush sculpt dan
+  mewarnainya dengan cat vertex atau tekstur, lalu bake ke tekstur.
 - **Render produk dan konsep:** mengatur material dan lampu, lalu render dengan
   EEVEE atau Cycles di GPU kamu.
 - **Apa pun yang bisa dilakukan Blender:** `run_python` memberi akses `bpy`
@@ -425,11 +428,63 @@ perintah, beri path lengkap ke `ghostblend`; kalau meminta transport, pilih
 
 ---
 
+## Cakupan fitur Blender
+
+![Kepala yang dipahat, dicat, dan diberi cahaya sepenuhnya lewat tool Ghostblend](docs/images/features-sheet.png)
+
+*Dipahat dari sebuah bola dengan tool `sculpt` (tanduk, moncong, alis, rongga
+mata, dicerminkan), dicat dengan `paint`, dan diberi cahaya dengan `world_set`
+dan `light_set`. Tidak ada jendela Blender sama sekali.*
+
+Setiap area di bawah sudah dicek di Blender 5.1 mode background, dan cek itu
+tetap ada sebagai tes regresi di
+[`tests/bridge/test_capabilities.py`](tests/bridge/test_capabilities.py). Setiap
+tes memastikan efek yang nyata: geometri berubah, piksel menyala, bone punya
+weight, file tertulis.
+
+| Area | Yang berjalan headless | Cara agent memakainya |
+|---|---|---|
+| Modelling | Primitif; operasi Edit Mode extrude, inset, bevel, subdivide, loop cut, bisect, spin, merge, delete, dissolve, normal, triangulate, shading; semua modifier dan boolean; curve, teks 3D, metaball, NURBS; geometry nodes; remesh voxel dan QuadriFlow; join | `add_primitive`, `edit_mesh`, `modifier_add`, `run_python` |
+| Sculpting | Brush draw, clay, inflate, smooth, flatten, pinch, grab, crease, dan noise; simetri cermin; remesh voxel dan subdivision untuk detail; Multires dan Dyntopo | `sculpt`, `run_python` |
+| Lighting | Lampu point, sun, spot, dan area; lingkungan HDRI, delapan bawaan Blender atau milikmu sendiri; emission; light linking | `light_set`, `world_set`, `material_set` |
+| Pewarnaan dan tekstur | Material Principled; tekstur gambar dan prosedural; warna vertex; cat vertex dan tekstur; UV unwrap dengan tujuh metode; bake tekstur sembilan jenis, termasuk high-poly ke low-poly | `material_set`, `paint`, `edit_mesh`, `bake` |
+| Rendering | Workbench, EEVEE, Cycles di CPU dan GPU (OptiX sudah diuji; CUDA, HIP, oneAPI, dan Metal dipakai kalau ada); denoising; depth of field; motion blur; garis Freestyle; compositor; PNG, JPEG, EXR, EXR multilayer, dan MP4 | `render`, `render_preview`, `run_python` |
+| Animasi dan rigging | Keyframe di properti apa pun; driver; shape key; constraint; armature dengan weight otomatis; keyframe pose | `animate`, `run_python` |
+| Simulasi | Rigid body, cloth, soft body, partikel, bake fluida Mantaflow | `run_python` |
+| Grease Pencil | Stroke, material, render | `run_python` |
+| Video editing | Strip sequencer, teks, render ke video | `run_python` |
+| Motion tracking | Movie clip dan track; camera solving butuh rekaman asli dan belum diuji | `run_python` |
+| Pipeline | glTF, FBX, OBJ, STL, PLY, USD, Alembic; append dan link dari file `.blend` lain; penandaan aset | `import_model`, `export_model`, `run_python` |
+
+### Yang tidak bisa dilakukan Blender headless, dan penggantinya
+
+Beberapa fitur Blender hanya ada di dalam antarmuka interaktifnya. Mode
+background menolaknya atau, di dua kasus, crash. Ghostblend menangani
+masing-masing dengan cara lain, dan memblokir dua operator yang bikin crash di
+`run_python` dengan petunjuk, bukan membiarkannya menjatuhkan Blender.
+
+| Fitur Blender | Yang terjadi saat headless | Gantinya |
+|---|---|---|
+| Stroke brush sculpt | Ditolak: butuh viewport | `sculpt` |
+| Mesh filter sculpt | Blender crash; Ghostblend memblokirnya | `sculpt` tanpa points |
+| Stroke cat vertex dan tekstur | Ditolak: butuh viewport | `paint` |
+| Operator loop cut | Blender crash; Ghostblend memblokirnya | `edit_mesh` dengan `loop_cut` |
+| Knife dan knife project | Ditolak: butuh viewport | `edit_mesh` dengan `bisect`, atau modifier boolean |
+| Render viewport (OpenGL) dan screenshot | Ditolak: tidak ada jendela | `render_preview`, atau `render` dengan Workbench |
+| Tool modal, gizmo, panel UI | Tidak ada tanpa UI | Tool bertipe dan `run_python` mengatur nilai pasti |
+
+Kalau operator lain menolak jalan karena tidak ada viewport, error yang kembali
+menjelaskannya dan menyarankan tool yang bisa dipakai.
+
+---
+
 ## Referensi tool
 
-Jarak dalam meter, rotasi dalam derajat, warna berupa float RGBA dari 0 sampai 1.
-Tool bertanda "autosave" mengubah scene. Kalau gagal, scene dikembalikan ke
-kondisi sebelum panggilan.
+Jarak dalam meter dan rotasi dalam derajat. Warna berupa float RGBA dari 0
+sampai 1 di ruang warna linear Blender, nilai yang sama dengan yang disimpan
+Blender, jadi tampak lebih terang di layar setelah view transform. Tool bertanda
+"autosave" mengubah scene. Kalau gagal, scene dikembalikan ke kondisi sebelum
+panggilan.
 
 ### Scene
 
@@ -451,7 +506,29 @@ kondisi sebelum panggilan.
 | `object_duplicate` | ya | Menyalin objek, sebagai salinan mandiri atau instance yang berbagi mesh |
 | `modifier_add` | ya | subdivision, mirror, array, boolean, bevel, solidify, decimate, triangulate, weld, displace, remesh, wireframe, screw, smooth, edge_split; `params` dicek terhadap pengaturan asli Blender |
 | `modifier_apply` | ya | Membakar satu modifier, atau semuanya, ke mesh |
-| `material_set` | ya | Principled BSDF: warna dasar, metallic, roughness, IOR, alpha, transmission, emission, tekstur gambar |
+| `material_set` | ya | Principled BSDF: warna dasar, metallic, roughness, IOR, alpha, transmission, emission, tekstur gambar. Tanpa nama, ia mengedit material yang sudah ada di objek |
+| `edit_mesh` | ya | Operasi Edit Mode pada face terpilih: extrude, inset, bevel, subdivide, loop_cut, bisect, spin, merge, delete, dissolve, flip_normals, recalc_normals, triangulate, shade_smooth, shade_flat, unwrap, mark_seams. Face dipilih berdasarkan arah (`facing`), kotak dunia, slot material, atau indeks |
+
+### Sculpting dan painting
+
+| Tool | Autosave | Fungsinya |
+|---|---|---|
+| `sculpt` | ya | Brush draw, clay, inflate, smooth, flatten, pinch, grab, crease, noise. Stroke adalah daftar titik world-space yang dicap dengan radius, strength, dan falloff, dengan simetri cermin opsional. Tanpa points, smooth, inflate, dan noise bekerja di seluruh mesh. `subdivide` atau `remesh` menambah kepadatan yang dibutuhkan sculpting |
+| `paint` | ya | Mengecat warna vertex atau tekstur gambar lewat UV, dengan stroke atau mengisi face terpilih, dengan mode mix, add, multiply, subtract, lighten, dan darken. Membuat layer warna atau teksturnya dan menyambungkannya ke material |
+
+### Lighting
+
+| Tool | Autosave | Fungsinya |
+|---|---|---|
+| `world_set` | ya | Warna dan kekuatan background world, atau HDRI (city, courtyard, forest, interior, night, studio, sunrise, sunset, atau file milikmu) dengan rotasi |
+| `light_set` | ya | Membuat atau mengedit lampu berdasarkan nama: tipe, power, warna, ukuran, sudut sun, cone dan blend spot, bayangan, posisi, dan arah lewat `look_at` |
+
+### Baking dan animasi
+
+| Tool | Autosave | Fungsinya |
+|---|---|---|
+| `bake` | ya | Bake Cycles ke tekstur: diffuse, combined, ao, normal, emit, roughness, shadow, glossy, position. `source` mem-bake model high-poly ke objek ini; `assign` menyambungkan hasilnya ke material |
+| `animate` | ya | Keyframe di properti apa pun yang bisa dianimasikan, seperti `location`, `rotation_deg`, `data.energy`, atau `modifiers["Bevel"].width`, dengan interpolasi bezier, linear, atau constant |
 
 ### File
 
@@ -465,7 +542,7 @@ kondisi sebelum panggilan.
 | Tool | Fungsinya |
 |---|---|
 | `render_preview` | Gambar cepat yang dikembalikan langsung: bawaannya lembar 2x2 berisi depan, kanan, atas, dan perspektif. `shading` bisa solid, textured, atau rendered; `objects` membingkai sebagian objek saja. Tidak pernah mengubah scene |
-| `render` | Render final gambar diam atau animasi dengan Workbench, EEVEE, atau Cycles di GPU atau CPU. Berjalan sebagai job di latar belakang dan mengembalikan id job; `wait=true` menunggu untuk gambar diam yang singkat |
+| `render` | Render final gambar diam atau animasi dengan Workbench, EEVEE, atau Cycles di GPU atau CPU, sebagai PNG, JPEG, EXR, EXR multilayer, atau MP4. Berjalan sebagai job di latar belakang dan mengembalikan id job; `wait=true` menunggu untuk gambar diam yang singkat |
 | `job_status` | Status, persen progres, baris log terakhir, file keluaran; `include_image` mengembalikan gambar jadinya |
 | `job_cancel` | Menghentikan render yang antre atau sedang berjalan |
 
@@ -678,12 +755,13 @@ docs/           Spec desain, rencana build, gambar
 |---|---|---|
 | Unit test Rust | `cargo test --lib` | 48 |
 | Supervisor dengan Blender asli | `cargo test --test worker_integration` | 6 |
-| Bridge di dalam Blender | `blender -b --factory-startup --python tests/bridge/run_tests.py` | 74 |
-| End-to-end lewat MCP | `python tests/e2e/mcp_e2e.py --binary target/release/ghostblend.exe --stage render` | 21 cek |
+| Bridge di dalam Blender, termasuk matriks kemampuan | `blender -b --factory-startup --python tests/bridge/run_tests.py` | 166 |
+| End-to-end lewat MCP | `python tests/e2e/mcp_e2e.py --binary target/release/ghostblend.exe --stage render` | 30 cek |
 
 Tes end-to-end mencakup argumen yang salah, Blender yang tidak ada, panggilan
-paralel, gambar preview langsung, render job, pembatalan, dan memastikan tidak
-ada proses Blender yang tersisa saat Ghostblend dimatikan paksa.
+paralel, gambar preview langsung, render job, pembatalan, setiap tool modelling,
+sculpting, painting, lighting, bake, dan animasi, pengaman crash, dan memastikan
+tidak ada proses Blender yang tersisa saat Ghostblend dimatikan paksa.
 
 ---
 
@@ -699,8 +777,13 @@ diuji di Windows 11 dengan Blender 5.1. Kekurangan yang diketahui:
 - Transport hanya stdio. Transport HTTP dengan autentikasi, untuk layanan
   hosted, sudah direncanakan.
 - Satu proses server mengendalikan satu scene.
-- Tool khusus untuk geometry nodes dan animasi sudah direncanakan; sampai saat
-  itu, `run_python` bisa menanganinya.
+- Stroke sculpt dan paint dijalankan oleh kode brush milik Ghostblend, bukan
+  mesin brush Blender, karena Blender menolak stroke itu tanpa viewport. Brush-nya
+  mencakup bentuk yang umum; pengaturan brush Blender yang lengkap, seperti
+  tekstur dan jarak stroke, belum tersedia.
+- Tool khusus untuk geometry nodes, simulasi, dan rigging sudah direncanakan;
+  sampai saat itu, `run_python` bisa menanganinya, seperti yang ditunjukkan tes
+  kemampuan.
 
 ## Lisensi
 

@@ -15,6 +15,7 @@ gbmain.bootstrap(SESSION, WORKDIR, keep=10, restore_latest=False)
 MUTATING = {
     "scene_new", "scene_open", "add_primitive", "transform", "object_delete", "object_duplicate",
     "modifier_add", "modifier_apply", "material_set", "import_model", "checkpoint_restore", "run_python",
+    "edit_mesh", "sculpt", "paint", "world_set", "light_set", "bake", "animate",
 }
 
 _ids = itertools.count(1)

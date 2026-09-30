@@ -58,7 +58,8 @@ def log(level, msg):
 def _import_commands():
     # Importing a module registers its commands.
     from . import scene, pyexec, materials  # noqa: F401
-    for name in ("objects", "modifiers", "model_io", "preview", "validate", "api", "render"):
+    for name in ("objects", "modifiers", "model_io", "preview", "validate", "api", "render",
+                 "editmesh", "sculpt", "paint", "lighting", "bake", "animate"):
         try:
             __import__(f"{__package__}.{name}")
         except ModuleNotFoundError as e:

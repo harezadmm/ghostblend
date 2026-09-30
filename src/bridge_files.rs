@@ -23,6 +23,14 @@ pub const FILES: &[(&str, &str)] = &[
     ("bridge/gb/pyexec.py", include_str!("../bridge/gb/pyexec.py")),
     ("bridge/gb/api.py", include_str!("../bridge/gb/api.py")),
     ("bridge/gb/render.py", include_str!("../bridge/gb/render.py")),
+    ("bridge/gb/selection.py", include_str!("../bridge/gb/selection.py")),
+    ("bridge/gb/brush.py", include_str!("../bridge/gb/brush.py")),
+    ("bridge/gb/editmesh.py", include_str!("../bridge/gb/editmesh.py")),
+    ("bridge/gb/sculpt.py", include_str!("../bridge/gb/sculpt.py")),
+    ("bridge/gb/paint.py", include_str!("../bridge/gb/paint.py")),
+    ("bridge/gb/lighting.py", include_str!("../bridge/gb/lighting.py")),
+    ("bridge/gb/bake.py", include_str!("../bridge/gb/bake.py")),
+    ("bridge/gb/animate.py", include_str!("../bridge/gb/animate.py")),
     ("bridge/gb/main.py", include_str!("../bridge/gb/main.py")),
 ];
 

@@ -95,7 +95,13 @@ def material_set(args):
         raise util.UserError(f"Object {obj.name!r} ({obj.type}) cannot hold materials",
                              hint="Materials work on meshes, curves, text, surfaces and metaballs")
     name = args.get("name")
-    mat = bpy.data.materials.get(name) if name else None
+    if name:
+        mat = bpy.data.materials.get(name)
+    else:
+        # No name: edit the material already in the target slot instead of replacing it,
+        # so earlier work on it (painted colours, textures) is kept.
+        idx = 0 if args.get("slot") is None else int(args["slot"])
+        mat = obj.material_slots[idx].material if idx < len(obj.material_slots) else None
     created = mat is None
     if mat is None:
         mat = bpy.data.materials.new(name or f"{obj.name}_Material")

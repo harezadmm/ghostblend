@@ -222,7 +222,7 @@ Roadmap setelah v1:
 
 - ~~**v1.1** unduh build portabel Blender ke direktori aplikasi, sehingga benar-benar nol instalasi.~~ Sudah dikerjakan pada 2026-09-29, lihat bagian 19.
 - **v1.2** transport Streamable HTTP dengan token, image Docker dengan GPU (EGL di Linux), satu container per sesi.
-- **v1.3** paket tool geometry nodes dan animasi.
+- **v1.3** paket tool geometry nodes, simulasi, dan rigging. Sculpt, texture paint, keyframe, lighting, dan bake sudah masuk lebih dulu, lihat bagian 20.
 - **v2** layanan hosted "Blender as a service untuk agent".
 
 ## 17. Rencana implementasi
@@ -282,3 +282,35 @@ Verifikasi di mesin ini:
 | Mesin tidak ada dan unduhan dimatikan | server tetap hidup dengan 25 tool; panggilan membalas instruksi `ghostblend setup` |
 
 Belum diverifikasi di mesin ini: unduhan sungguhan 414 MB dari blender.org dan kompatibilitas bridge dengan 5.1.2. Linux diimplementasikan lewat `tar` sistem tetapi belum diuji.
+
+## 20. Audit cakupan fitur Blender (ditambahkan 2026-09-30)
+
+Permintaan pengguna: semua fitur Blender, dari modelling, sculpting, lighting, pewarnaan, sampai rendering, harus bisa dipakai lewat Ghostblend.
+
+Metode: setiap area diuji langsung di Blender 5.1 mode background dengan efek yang bisa diukur (geometri berubah, piksel menyala, bone punya weight, file tertulis). Hasilnya disimpan sebagai tes regresi di `tests/bridge/test_capabilities.py`.
+
+| Area | Hasil headless |
+|---|---|
+| Modelling | Operator Edit Mode, curve, teks, metaball, NURBS, geometry nodes, remesh voxel dan QuadriFlow, join: jalan. `loopcut_slide` crash. `knife_project` butuh viewport |
+| Sculpting | Mode sculpt, Dyntopo, Multires: jalan. `sculpt.brush_stroke` butuh viewport. `sculpt.mesh_filter` crash |
+| Lighting | Semua tipe lampu, HDRI (8 bawaan), emission, light linking: jalan |
+| Pewarnaan | Material, tekstur gambar dan prosedural, warna vertex, UV unwrap semua metode, bake Cycles: jalan. Stroke paint butuh viewport |
+| Rendering | Workbench, EEVEE, Cycles CPU dan OptiX, OIDN, DOF, motion blur, compositor, Freestyle, MP4, EXR multilayer: jalan. Render OpenGL tidak mungkin |
+| Animasi dan rigging | Keyframe, driver, shape key, constraint, armature dengan weight otomatis: jalan |
+| Simulasi | Rigid body, cloth, partikel, soft body, bake fluida Mantaflow: jalan |
+| Lainnya | Grease Pencil v3, VSE, movie clip dan track, append dan asset: jalan |
+
+Keputusan:
+
+| Keputusan | Alasan |
+|---|---|
+| Tool `sculpt` dan `paint` dengan brush sendiri di atas bmesh dan data atribut | Operator stroke Blender menolak jalan tanpa viewport; brush sendiri deterministik dan bisa diuji |
+| Tool `edit_mesh` dengan seleksi face berdasarkan arah, kotak, material, atau indeks | Agent tidak bisa mengeklik; seleksi deklaratif menggantikannya. `loop_cut` memakai `bmesh.ops.subdivide_edges` agar tidak menyentuh operator yang crash |
+| `world_set`, `light_set`, `bake`, `animate` sebagai tool bertipe | Area yang paling sering dipakai; `run_python` tetap tersedia untuk sisanya |
+| `run_python` memblokir `loopcut` dan `sculpt.mesh_filter` dengan error `HeadlessUnsupported` | Keduanya menjatuhkan proses Blender; lebih baik ditolak dengan petunjuk tool pengganti |
+| Error poll atau viewport diberi petunjuk tool pengganti | Agent langsung tahu jalan lain |
+| `render` menerima `format` png, jpeg, exr, exr_multilayer, mp4 | Blender 5.x mewajibkan `media_type` diatur sebelum `file_format` |
+| `material_set` tanpa `name` mengedit material di slot | Sebelumnya membuat material baru dan menghapus hasil cat |
+| `scene_new` memberi LineStyle ke lineset Freestyle | Scene kosong baru kehilangan linestyle sehingga Freestyle tidak menggambar apa pun |
+
+Jumlah tool menjadi 32. Verifikasi di mesin ini: unit test Rust 48, integrasi supervisor 6, tes bridge 166, E2E 30 cek, clippy tanpa peringatan.

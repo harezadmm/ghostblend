@@ -3,6 +3,7 @@ import contextlib
 import io
 import linecache
 import math
+import re
 import traceback
 
 import bmesh
@@ -50,6 +51,35 @@ class CappedIO(io.TextIOBase):
         return text
 
 
+# Operators that crash Blender outright in background mode (found by probing
+# Blender 5.1), with the Ghostblend tool that does the same job safely.
+_CRASHERS = [
+    (re.compile(r"\bmesh\.loopcut(_slide)?\s*\("), "bpy.ops.mesh.loopcut / loopcut_slide",
+     "Use edit_mesh with operation='loop_cut' and an axis."),
+    (re.compile(r"\bsculpt\.mesh_filter\s*\("), "bpy.ops.sculpt.mesh_filter",
+     "Use the sculpt tool without points to filter the whole mesh (brush smooth, inflate or noise)."),
+]
+
+_VIEWPORT_OPS = {
+    "sculpt.": "Sculpt strokes need Blender's viewport; use the sculpt tool instead.",
+    "paint.": "Paint strokes need Blender's viewport; use the paint tool (target vertex or texture) instead.",
+    "knife": "The knife needs the viewport; use edit_mesh bisect, or a boolean modifier, instead.",
+    "view3d": "This needs the 3D viewport, which does not exist headless. Use render_preview to look at the scene.",
+    "opengl": "Viewport (OpenGL) renders need a window; use render_preview or render with engine workbench instead.",
+}
+
+
+def _viewport_hint(message):
+    msg = message.lower()
+    if "poll()" not in msg and "view3d" not in msg and "opengl" not in msg and "context is incorrect" not in msg:
+        return None
+    for key, hint in _VIEWPORT_OPS.items():
+        if key in msg:
+            return hint
+    return ("This operator needs Blender's interactive interface, which does not exist headless. "
+            "Look for a Ghostblend tool that does the same job, or change the data directly with bmesh or bpy.data.")
+
+
 class ExecError(Exception):
     """Failure inside agent code; `payload` is the error object sent back to the agent."""
 
@@ -92,6 +122,11 @@ def run_python(args):
     except SyntaxError as e:
         raise ExecError({"type": "SyntaxError", "message": f"{e.msg} (line {e.lineno})",
                          "traceback": "".join(traceback.format_exception_only(type(e), e))})
+    for pattern, name, alternative in _CRASHERS:
+        if pattern.search(code):
+            raise ExecError({"type": "HeadlessUnsupported",
+                             "message": f"{name} crashes Blender in background mode, so Ghostblend blocked it",
+                             "hint": alternative})
     linecache.cache[FILENAME] = (len(code), None, code.splitlines(True), FILENAME)
     out, err = CappedIO(OUTPUT_LIMIT), CappedIO(OUTPUT_LIMIT)
     failure = None
@@ -107,6 +142,9 @@ def run_python(args):
                        "message": f"The code called sys.exit({e.code!r}); the Blender worker keeps running"}
         except BaseException as e:  # noqa: BLE001 - report every failure to the agent
             failure = {"type": type(e).__name__, "message": str(e) or repr(e), "traceback": _user_traceback(e)}
+            hint = _viewport_hint(failure["message"])
+            if hint:
+                failure["hint"] = hint
     if failure is not None:
         failure["stdout"] = out.getvalue()
         failure["stderr"] = err.getvalue()

@@ -220,7 +220,7 @@ def main():
     try:
         bad.initialize()
         tools = bad.call("tools/list", {})["tools"]
-        check("tools/list works without a valid Blender", len(tools) == 25, f"got {len(tools)}")
+        check("tools/list works without a valid Blender", len(tools) == 32, f"got {len(tools)}")
         res = bad.tool("scene_new", {}, timeout=120)
         check("call with bad Blender is a clean error",
               res.get("isError") is True and "unavailable" in text_of(res).lower(),
@@ -237,7 +237,7 @@ def main():
 
         tools = c.call("tools/list", {})["tools"]
         names = {t["name"] for t in tools}
-        check("tools/list has 25 tools", len(tools) == 25, f"got {len(tools)}")
+        check("tools/list has 32 tools", len(tools) == 32, f"got {len(tools)}")
         for required in ("scene_new", "add_primitive", "render_preview", "run_python"):
             check(f"tool '{required}' present", required in names)
 
@@ -263,6 +263,36 @@ def main():
         values = sorted(text_of(r["result"]).count('"result": ' + str(i * 10)) for i, r in enumerate(results))
         check("parallel calls all answered", len(results) == 3 and all("result" in r for r in results))
         check("each parallel call kept its own result", sum(values) == 3, f"values={values}")
+
+        # The modelling, sculpting, painting, lighting, baking and animation tools over MCP.
+        c.tool("scene_new", {})
+        c.tool("add_primitive", {"type": "cube", "name": "Box"})
+        res = c.tool("edit_mesh", {"object": "Box", "operation": "extrude", "distance": 1.0,
+                                   "select": {"facing": [0, 0, 1]}})
+        check("edit_mesh extrudes the selected face", not res.get("isError") and '"faces_selected": 1' in text_of(res),
+              text_of(res)[:200])
+        c.tool("add_primitive", {"type": "uv_sphere", "name": "Ball", "location": [4, 0, 0]})
+        res = c.tool("sculpt", {"object": "Ball", "brush": "draw", "points": [[4, 0, 1], [4.3, 0, 0.9]],
+                                "radius": 0.4, "subdivide": 1, "symmetry": ["x"]})
+        check("sculpt stroke moves vertices", not res.get("isError") and '"vertices_moved": 0' not in text_of(res),
+              text_of(res)[:200])
+        res = c.tool("sculpt", {"object": "Ball", "brush": "draw", "points": [[1, 2]]})
+        check("sculpt rejects a 2D point", res.get("isError") is True and "3 item" in text_of(res), text_of(res)[:200])
+        res = c.tool("paint", {"object": "Ball", "target": "texture", "color": [1, 0, 0], "resolution": 64,
+                               "select": {"facing": [0, 0, 1]}})
+        check("paint texture fills faces", not res.get("isError") and "painted_texels" in text_of(res), text_of(res)[:200])
+        res = c.tool("world_set", {"hdri": "studio", "strength": 1.5})
+        check("world_set loads a bundled HDRI", not res.get("isError") and "studio" in text_of(res), text_of(res)[:200])
+        res = c.tool("light_set", {"name": "Key", "type": "AREA", "energy": 600, "location": [3, -3, 4],
+                                   "look_at": [0, 0, 0]})
+        check("light_set creates a light", not res.get("isError") and '"created": true' in text_of(res), text_of(res)[:200])
+        res = c.tool("animate", {"object": "Box", "property": "rotation_deg", "interpolation": "linear",
+                                 "keys": [{"frame": 1, "value": [0, 0, 0]}, {"frame": 24, "value": [0, 0, 180]}]})
+        check("animate inserts keyframes", not res.get("isError") and '"keys": 2' in text_of(res), text_of(res)[:200])
+        res = c.tool("bake", {"object": "Box", "type": "ao", "resolution": 32, "samples": 1, "device": "cpu"})
+        check("bake writes a texture", not res.get("isError") and ".png" in text_of(res), text_of(res)[:200])
+        res = c.tool("run_python", {"code": "bpy.ops.mesh.loopcut_slide()"})
+        check("crashing operator is blocked", res.get("isError") is True and "loop_cut" in text_of(res), text_of(res)[:200])
 
         if args.stage in ("preview", "render"):
             c.tool("scene_new", {})

@@ -63,6 +63,37 @@ def _ensure_light(scene):
 
 
 _ENGINES = {"workbench": "BLENDER_WORKBENCH", "eevee": "BLENDER_EEVEE", "cycles": "CYCLES"}
+_EXT_FORMAT = {".png": "png", ".jpg": "jpeg", ".jpeg": "jpeg", ".exr": "exr", ".mp4": "mp4", ".mkv": "mp4"}
+
+
+def _format_for(a):
+    fmt = a.get("format")
+    if fmt:
+        return fmt
+    return _EXT_FORMAT.get(os.path.splitext(a.get("output_path", ""))[1].lower(), "png")
+
+
+def _set_format(scene, fmt, transparent):
+    """Blender 5 chooses image, multilayer or video with media_type before file_format."""
+    isf = scene.render.image_settings
+    media = {"mp4": "VIDEO", "exr_multilayer": "MULTI_LAYER_IMAGE"}.get(fmt, "IMAGE")
+    if hasattr(isf, "media_type"):
+        isf.media_type = media
+    if fmt == "mp4":
+        isf.file_format = "FFMPEG"
+        scene.render.ffmpeg.format = "MPEG4"
+        scene.render.ffmpeg.codec = "H264"
+        scene.render.ffmpeg.constant_rate_factor = "HIGH"
+    elif fmt == "exr_multilayer":
+        isf.file_format = "OPEN_EXR_MULTILAYER"
+    elif fmt == "exr":
+        isf.file_format = "OPEN_EXR"
+    elif fmt == "jpeg":
+        isf.file_format = "JPEG"
+        isf.quality = 92
+    else:
+        isf.file_format = "PNG"
+        isf.color_mode = "RGBA" if transparent else "RGB"
 
 
 def _apply(scene, a):
@@ -126,13 +157,23 @@ def main():
 
     out = args["output_path"]
     outputs = []
+    fmt = _format_for(args)
+    animation = args.get("frame_start") is not None and args.get("frame_end") is not None
     try:
-        if args.get("frame_start") is not None and args.get("frame_end") is not None:
+        if fmt == "mp4" and not animation:
+            raise ValueError("an mp4 video needs frame_start and frame_end")
+        _set_format(scene, fmt, bool(args.get("transparent")))
+        if animation:
             scene.frame_start = int(args["frame_start"])
             scene.frame_end = int(args["frame_end"])
-            scene.render.filepath = out if out.endswith(os.sep) or os.path.isdir(out) else out
+            folder = out if (out.endswith(("/", "\\")) or os.path.isdir(out)) else (os.path.dirname(out) or ".")
+            os.makedirs(folder, exist_ok=True)
+            before = set(os.listdir(folder))
+            scene.render.filepath = out
             bpy.ops.render.render(animation=True, write_still=True)
-            outputs.append({"animation": out, "frames": [scene.frame_start, scene.frame_end]})
+            files = sorted(os.path.join(folder, f) for f in set(os.listdir(folder)) - before)
+            outputs.append({"animation": files[-1] if files else out, "files": files,
+                            "frames": [scene.frame_start, scene.frame_end], "format": fmt})
         else:
             frame = int(args.get("frame", scene.frame_current))
             scene.frame_set(frame)
@@ -141,7 +182,7 @@ def main():
             bpy.ops.render.render(write_still=True)
             # Blender may append the extension; report the real file.
             real = out if os.path.isfile(out) else scene.render.frame_path(frame=frame)
-            outputs.append({"still": real, "frame": frame})
+            outputs.append({"still": real, "frame": frame, "format": fmt})
         _emit({"ok": True, "engine": scene.render.engine, "outputs": outputs,
                "resolution": [scene.render.resolution_x, scene.render.resolution_y]})
     except Exception as e:

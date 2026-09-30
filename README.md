@@ -11,8 +11,8 @@ single image in 1.5 seconds. Nothing opened on screen.*
 
 Ghostblend is one executable. It speaks the [Model Context Protocol](https://modelcontextprotocol.io)
 on stdio, and behind it runs a full Blender with no window. Your AI agent gets
-typed tools to build scenes, edit meshes, assign materials, import and export
-models, and render, and it sees its work as images. You do not need to install
+typed tools to model, sculpt, paint, light, animate, bake, import and export,
+and render, and it sees its work as images. You do not need to install
 Blender, open it, or add an add-on.
 
 ---
@@ -23,6 +23,7 @@ Blender, open it, or add an add-on.
 - [What an agent can do](#what-an-agent-can-do)
 - [Quick start](#quick-start)
 - [Connect your agent](#connect-your-agent)
+- [Blender feature coverage](#blender-feature-coverage)
 - [Tool reference](#tool-reference)
 - [How it works](#how-it-works)
 - [The Blender engine](#the-blender-engine)
@@ -121,8 +122,10 @@ Typical uses:
   Alembic; apply modifiers; decimate; validate before shipping to a game engine.
 - **3D printing prep:** find non-manifold edges, holes, flipped normals and
   unapplied scale, then export STL.
-- **Procedural modelling from text:** build scenes from primitives and
-  modifiers, iterating with previews.
+- **Procedural modelling from text:** build scenes from primitives, Edit Mode
+  operations and modifiers, iterating with previews.
+- **Sculpting and painting:** shape organic forms with sculpt brushes and colour
+  them with vertex or texture painting, then bake to textures.
 - **Product and concept renders:** set materials and lights, then render with
   EEVEE or Cycles on your GPU.
 - **Anything else Blender can do:** `run_python` gives full `bpy` access, and
@@ -418,11 +421,62 @@ the agent poll `job_status` instead.
 
 ---
 
+## Blender feature coverage
+
+![A head sculpted, painted and lit entirely through Ghostblend tools](docs/images/features-sheet.png)
+
+*Sculpted from a sphere with the `sculpt` tool (horns, snout, brow, eye sockets,
+mirrored), painted with `paint`, and lit with `world_set` and `light_set`. No
+Blender window was involved.*
+
+Every area below was checked on Blender 5.1 in background mode, and the checks
+live on as regression tests in
+[`tests/bridge/test_capabilities.py`](tests/bridge/test_capabilities.py). Each test
+asserts a real effect: geometry changed, pixels lit, bones weighted, a file
+written.
+
+| Area | What works headless | How the agent reaches it |
+|---|---|---|
+| Modelling | Primitives; Edit Mode extrude, inset, bevel, subdivide, loop cut, bisect, spin, merge, delete, dissolve, normals, triangulate, shading; all modifiers and booleans; curves, 3D text, metaballs, NURBS; geometry nodes; voxel and QuadriFlow remesh; join | `add_primitive`, `edit_mesh`, `modifier_add`, `run_python` |
+| Sculpting | Draw, clay, inflate, smooth, flatten, pinch, grab, crease and noise brushes; mirror symmetry; voxel remesh and subdivision for detail; Multires and Dyntopo | `sculpt`, `run_python` |
+| Lighting | Point, sun, spot and area lights; HDRI environments, eight bundled with Blender or your own; emission; light linking | `light_set`, `world_set`, `material_set` |
+| Colouring and texturing | Principled materials; image and procedural textures; vertex colours; vertex and texture painting; UV unwrapping with seven methods; texture baking of nine kinds, including high-poly to low-poly | `material_set`, `paint`, `edit_mesh`, `bake` |
+| Rendering | Workbench, EEVEE, Cycles on CPU and GPU (OptiX tested; CUDA, HIP, oneAPI and Metal are used when present); denoising; depth of field; motion blur; Freestyle lines; the compositor; PNG, JPEG, EXR, multilayer EXR and MP4 | `render`, `render_preview`, `run_python` |
+| Animation and rigging | Keyframes on any property; drivers; shape keys; constraints; armatures with automatic weights; pose keyframes | `animate`, `run_python` |
+| Simulation | Rigid body, cloth, soft body, particles, Mantaflow fluid baking | `run_python` |
+| Grease Pencil | Strokes, materials, rendering | `run_python` |
+| Video editing | Sequencer strips, text, rendering to video | `run_python` |
+| Motion tracking | Movie clips and tracks; camera solving needs real footage and was not tested | `run_python` |
+| Pipeline | glTF, FBX, OBJ, STL, PLY, USD, Alembic; append and link from other `.blend` files; asset marking | `import_model`, `export_model`, `run_python` |
+
+### What headless Blender cannot do, and what to use instead
+
+A few Blender features exist only inside its interactive interface. Background
+mode either refuses them or, in two cases, crashes. Ghostblend covers each one
+another way, and blocks the two crashing operators in `run_python` with a hint
+instead of letting them take Blender down.
+
+| Blender feature | What happens headless | Use instead |
+|---|---|---|
+| Sculpt brush strokes | Refused: needs the viewport | `sculpt` |
+| Sculpt mesh filter | Crashes Blender; Ghostblend blocks it | `sculpt` without points |
+| Vertex and texture paint strokes | Refused: needs the viewport | `paint` |
+| Loop cut operator | Crashes Blender; Ghostblend blocks it | `edit_mesh` with `loop_cut` |
+| Knife and knife project | Refused: needs the viewport | `edit_mesh` with `bisect`, or a boolean modifier |
+| Viewport (OpenGL) render and screenshots | Refused: no window | `render_preview`, or `render` with Workbench |
+| Modal tools, gizmos, UI panels | Do not exist without a UI | Typed tools and `run_python` set exact values |
+
+When another operator refuses to run for lack of a viewport, the error that
+comes back says so and suggests the tool to use.
+
+---
+
 ## Tool reference
 
-Distances are metres, rotations are degrees, colours are RGBA floats from 0 to 1.
-Tools marked "autosaved" change the scene. If one fails, the scene rolls back to
-how it was before the call.
+Distances are metres and rotations are degrees. Colours are RGBA floats from 0
+to 1 in Blender's linear colour space, the same values Blender stores, so they
+look lighter on screen after the view transform. Tools marked "autosaved" change
+the scene. If one fails, the scene rolls back to how it was before the call.
 
 ### Scene
 
@@ -444,7 +498,29 @@ how it was before the call.
 | `object_duplicate` | yes | Copy an object, as an independent copy or a linked instance |
 | `modifier_add` | yes | subdivision, mirror, array, boolean, bevel, solidify, decimate, triangulate, weld, displace, remesh, wireframe, screw, smooth, edge_split; `params` are checked against Blender's own settings |
 | `modifier_apply` | yes | Bake one modifier, or all of them, into the mesh |
-| `material_set` | yes | Principled BSDF: base colour, metallic, roughness, IOR, alpha, transmission, emission, image texture |
+| `material_set` | yes | Principled BSDF: base colour, metallic, roughness, IOR, alpha, transmission, emission, image texture. Without a name it edits the material already on the object |
+| `edit_mesh` | yes | Edit Mode operations on selected faces: extrude, inset, bevel, subdivide, loop_cut, bisect, spin, merge, delete, dissolve, flip_normals, recalc_normals, triangulate, shade_smooth, shade_flat, unwrap, mark_seams. Faces are selected by direction (`facing`), world box, material slot or index |
+
+### Sculpting and painting
+
+| Tool | Autosaved | What it does |
+|---|---|---|
+| `sculpt` | yes | Brushes draw, clay, inflate, smooth, flatten, pinch, grab, crease, noise. A stroke is a list of world-space points stamped with a radius, strength and falloff, with optional mirror symmetry. Without points, smooth, inflate and noise act on the whole mesh. `subdivide` or `remesh` add the density sculpting needs |
+| `paint` | yes | Paint vertex colours or an image texture through the UVs, by stroke or by filling selected faces, with mix, add, multiply, subtract, lighten and darken. Creates the colour layer or texture and connects it to the material |
+
+### Lighting
+
+| Tool | Autosaved | What it does |
+|---|---|---|
+| `world_set` | yes | World background colour and strength, or an HDRI (city, courtyard, forest, interior, night, studio, sunrise, sunset, or your own file) with rotation |
+| `light_set` | yes | Create or edit a light by name: type, power, colour, size, sun angle, spot cone and blend, shadows, position, and `look_at` aiming |
+
+### Baking and animation
+
+| Tool | Autosaved | What it does |
+|---|---|---|
+| `bake` | yes | Cycles bake into a texture: diffuse, combined, ao, normal, emit, roughness, shadow, glossy, position. `source` bakes a high-poly model onto this one; `assign` connects the result to the material |
+| `animate` | yes | Keyframes on any animatable property, such as `location`, `rotation_deg`, `data.energy` or `modifiers["Bevel"].width`, with bezier, linear or constant interpolation |
 
 ### Files
 
@@ -458,7 +534,7 @@ how it was before the call.
 | Tool | What it does |
 |---|---|
 | `render_preview` | Quick images returned inline: by default a 2x2 sheet of front, right, top and perspective. `shading` is solid, textured or rendered; `objects` frames a subset. Never changes the scene |
-| `render` | Final render of a still or an animation with Workbench, EEVEE or Cycles on GPU or CPU. Runs as a background job and returns a job id; `wait=true` blocks for short stills |
+| `render` | Final render of a still or an animation with Workbench, EEVEE or Cycles on GPU or CPU, as PNG, JPEG, EXR, multilayer EXR or MP4. Runs as a background job and returns a job id; `wait=true` blocks for short stills |
 | `job_status` | State, progress percent, recent log lines, output files; `include_image` returns the finished picture |
 | `job_cancel` | Stop a queued or running render |
 
@@ -669,12 +745,13 @@ docs/           Design spec, build plan, images
 |---|---|---|
 | Rust unit tests | `cargo test --lib` | 48 |
 | Supervisor against real Blender | `cargo test --test worker_integration` | 6 |
-| Bridge inside Blender | `blender -b --factory-startup --python tests/bridge/run_tests.py` | 74 |
-| End to end over MCP | `python tests/e2e/mcp_e2e.py --binary target/release/ghostblend.exe --stage render` | 21 checks |
+| Bridge inside Blender, including the capability matrix | `blender -b --factory-startup --python tests/bridge/run_tests.py` | 166 |
+| End to end over MCP | `python tests/e2e/mcp_e2e.py --binary target/release/ghostblend.exe --stage render` | 30 checks |
 
 The end-to-end test covers invalid arguments, a missing Blender, parallel calls,
-inline preview images, render jobs, cancellation, and that no Blender process
-survives when Ghostblend is killed.
+inline preview images, render jobs, cancellation, every modelling, sculpting,
+painting, lighting, baking and animation tool, the crash guard, and that no
+Blender process survives when Ghostblend is killed.
 
 ---
 
@@ -690,8 +767,12 @@ Windows 11 with Blender 5.1. Known gaps:
 - Transport is stdio only. An HTTP transport with authentication, for hosted
   use, is planned.
 - One server process drives one scene.
-- Dedicated tools for geometry nodes and animation are planned; until then,
-  `run_python` covers them.
+- Sculpt and paint strokes are applied by Ghostblend's own brush code, not by
+  Blender's brush engine, because Blender refuses those strokes without a
+  viewport. The brushes cover the common shapes; Blender's full brush settings,
+  such as textures and stroke spacing, are not available.
+- Dedicated tools for geometry nodes, simulation and rigging are planned; until
+  then, `run_python` covers them, as the capability tests show.
 
 ## License
 

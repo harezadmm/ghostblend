@@ -24,6 +24,7 @@ gambar. Kamu tidak perlu menginstal Blender, membukanya, atau memasang addon.
 - [Kenapa Ghostblend dibuat](#kenapa-ghostblend-dibuat)
 - [Apa yang bisa dilakukan agent](#apa-yang-bisa-dilakukan-agent)
 - [Mulai cepat](#mulai-cepat)
+- [Menyambungkan ke agent](#menyambungkan-ke-agent)
 - [Referensi tool](#referensi-tool)
 - [Cara kerjanya](#cara-kerjanya)
 - [Mesin Blender](#mesin-blender)
@@ -134,15 +135,24 @@ Pemakaian umum:
 
 ## Mulai cepat
 
-### 1. Build
+### 1. Instal
 
-Kamu butuh [Rust toolchain](https://rustup.rs).
+Belum ada file unduhan siap pakai, jadi Ghostblend dibangun dari source. Kamu
+butuh [Rust toolchain](https://rustup.rs). Dari folder repositori:
 
 ```bash
-cargo build --release
+cargo install --path .
 ```
 
-Hasilnya `target/release/ghostblend` (`ghostblend.exe` di Windows).
+Perintah ini membangun binary release dan menaruh `ghostblend` di PATH-mu:
+
+| Sistem | Lokasi terpasang |
+|---|---|
+| Windows | `C:\Users\<kamu>\.cargo\bin\ghostblend.exe` |
+| macOS, Linux | `~/.cargo/bin/ghostblend` |
+
+Mau tetap di dalam repositori saja? `cargo build --release` menaruh binary yang
+sama di `target/release/`.
 
 ### 2. Pasang mesin (opsional)
 
@@ -173,33 +183,245 @@ ghostblend doctor
 
 ### 4. Sambungkan ke agent
 
-**Claude Code**
+Tambahkan Ghostblend ke aplikasi AI-mu. Cara tercepat lewat Claude Code:
 
 ```bash
-claude mcp add ghostblend -- /path/to/ghostblend
+claude mcp add --scope user ghostblend -- ghostblend
 ```
 
-**Claude Desktop, Cursor, dan client lain** memakai bentuk yang sama di file
-konfigurasi MCP-nya (`claude_desktop_config.json`, `.cursor/mcp.json`, dan
-seterusnya):
+Aplikasi lain dijelaskan langkah demi langkah di
+[Menyambungkan ke agent](#menyambungkan-ke-agent).
+
+### 5. Coba
+
+Buka chat atau sesi baru, lalu minta:
+
+> Pakai Ghostblend untuk menambah kepala monyet dengan material emas, lalu tampilkan preview-nya.
+
+Agent seharusnya memanggil `add_primitive`, `material_set`, dan `render_preview`,
+lalu gambar empat sudut muncul di chat.
+
+---
+
+## Menyambungkan ke agent
+
+Ghostblend adalah MCP server lokal. Aplikasi AI-mu menjalankannya di latar
+belakang dan berbicara dengannya lewat stdio, jadi kamu tidak pernah
+menjalankannya sendiri. Kamu cukup memberi tahu aplikasi di mana file programnya.
+Tidak perlu argumen, karena `serve` adalah perintah bawaan.
+
+**Sebelum mulai:**
+
+- **Jalankan `ghostblend setup` sekali** kalau kamu belum punya Blender 4.2+.
+  Unduhan mesin pertama berukuran 414 MB. Tool tetap berjalan selama unduhan,
+  tapi hanya membalas progresnya sampai selesai.
+- **Pakai path lengkap di aplikasi desktop.** Tool baris perintah menemukan
+  `ghostblend` di PATH. Aplikasi desktop sering berjalan dengan PATH yang lebih
+  pendek, jadi beri path lengkap dari tabel di [Instal](#1-instal).
+- **Gandakan backslash di JSON.** Tulis `C:\\Users\\kamu\\.cargo\\bin\\ghostblend.exe`
+  atau `C:/Users/kamu/.cargo/bin/ghostblend.exe`.
+
+| Aplikasi | Didukung | Tempat konfigurasinya |
+|---|---|---|
+| [Claude Code](#claude-code) | ya | `claude mcp add` |
+| [Claude Desktop](#claude-desktop) | ya | `claude_desktop_config.json` |
+| [Aplikasi desktop ChatGPT dan Codex](#aplikasi-desktop-chatgpt-dan-codex) | ya | `~/.codex/config.toml` |
+| [ChatGPT di web](#chatgpt-di-web) | belum | butuh server jarak jauh |
+| [Cursor](#cursor) | ya | `mcp.json` |
+| [VS Code dengan GitHub Copilot](#vs-code-dengan-github-copilot) | ya | `mcp.json` |
+| [Devin Desktop, dulu Windsurf](#devin-desktop-dulu-windsurf) | ya | `mcp_config.json` |
+| [Gemini CLI](#gemini-cli) | ya | `gemini mcp add` |
+| [Zed](#zed) | ya | `settings.json` |
+| [Aplikasi lain](#aplikasi-lain) | biasanya | pengaturan MCP-nya |
+
+### Claude Code
+
+```bash
+claude mcp add --scope user ghostblend -- ghostblend
+```
+
+`--scope user` membuat Ghostblend tersedia di semua proyekmu. Tanpa flag itu,
+Ghostblend hanya ditambahkan ke proyek saat ini. Pakai `--scope project` untuk
+menulis `.mcp.json` yang bisa di-commit untuk tim.
+
+Periksa di dalam sesi dengan `/mcp`, atau dari terminal:
+
+```bash
+claude mcp list
+```
+
+Hapus dengan `claude mcp remove ghostblend`.
+
+### Claude Desktop
+
+1. Buka menu **Claude** di menu bar sistem, bukan pengaturan di dalam jendela
+   chat, lalu pilih **Settings**.
+2. Masuk ke **Developer** dan klik **Edit Config**. Ini membuka
+   `claude_desktop_config.json`:
+   - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+   - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+3. Tambahkan Ghostblend di bawah `mcpServers`, tanpa menghapus server yang sudah
+   ada:
+
+   ```json
+   {
+     "mcpServers": {
+       "ghostblend": {
+         "command": "C:\\Users\\kamu\\.cargo\\bin\\ghostblend.exe"
+       }
+     }
+   }
+   ```
+
+   Di macOS pakai `"/Users/kamu/.cargo/bin/ghostblend"`.
+4. Tutup Claude Desktop sepenuhnya, lalu buka lagi.
+5. Di chat, klik tombol **+**, buka **Connectors**, lalu pastikan **ghostblend**
+   ada di daftar dan dalam keadaan aktif.
+
+Kalau tidak muncul, baca log server-nya, yang berisi pesan dari Ghostblend
+sendiri:
+
+- Windows: `%APPDATA%\Claude\logs\mcp-server-ghostblend.log`
+- macOS: `~/Library/Logs/Claude/mcp-server-ghostblend.log`
+
+### Aplikasi desktop ChatGPT dan Codex
+
+Aplikasi desktop ChatGPT, Codex CLI, dan ekstensi IDE Codex berbagi satu
+konfigurasi MCP. Menambahkan Ghostblend sekali membuatnya tersedia di ketiganya.
+
+Lewat Codex CLI:
+
+```bash
+codex mcp add ghostblend -- ghostblend
+```
+
+Atau edit sendiri `~/.codex/config.toml` (`C:\Users\<kamu>\.codex\config.toml`
+di Windows):
+
+```toml
+[mcp_servers.ghostblend]
+command = 'C:\Users\kamu\.cargo\bin\ghostblend.exe'
+tool_timeout_sec = 300
+```
+
+Tanda kutip tunggal membuat TOML membaca path Windows apa adanya. Codex
+menghentikan panggilan tool setelah 60 detik secara bawaan; `tool_timeout_sec =
+300` memberi waktu bagi render final singkat dengan `wait=true` untuk selesai.
+Kamu juga bisa menambahkan server dari pengaturan MCP di aplikasi desktop
+ChatGPT, yang menulis ke file yang sama.
+
+### ChatGPT di web
+
+Belum didukung. ChatGPT di browser hanya bisa tersambung ke MCP server jarak
+jauh lewat HTTPS dan tidak bisa menjalankan program di komputermu, sedangkan
+Ghostblend saat ini berjalan lokal lewat stdio. Pakai aplikasi desktop ChatGPT
+seperti dijelaskan di atas.
+
+Jangan akali ini dengan membuka Ghostblend lewat tunnel publik: `run_python`
+akan membuat siapa pun yang menemukan URL-nya bisa menjalankan kode di
+komputermu. Transport HTTP dengan autentikasi sudah ada di roadmap.
+
+### Cursor
+
+Edit `~/.cursor/mcp.json` untuk semua proyek, atau `.cursor/mcp.json` di dalam
+satu proyek:
 
 ```json
 {
   "mcpServers": {
     "ghostblend": {
-      "command": "C:\\path\\to\\ghostblend.exe"
+      "command": "C:\\Users\\kamu\\.cargo\\bin\\ghostblend.exe"
     }
   }
 }
 ```
 
-Tidak perlu argumen; `serve` adalah perintah bawaan. Path relatif yang dikirim
-agent, misalnya `out/model.glb`, diarahkan ke folder tempat client menjalankan
-Ghostblend.
+Lalu buka pengaturan MCP di Cursor dan pastikan tombol **ghostblend** aktif.
 
-### 5. Coba
+### VS Code dengan GitHub Copilot
 
-Minta agent membuat sesuatu dan menampilkan preview-nya.
+Jalankan **MCP: Open User Configuration** dari Command Palette, atau buat
+`.vscode/mcp.json` di workspace. VS Code memakai `servers` sebagai kunci teratas:
+
+```json
+{
+  "servers": {
+    "ghostblend": {
+      "type": "stdio",
+      "command": "C:\\Users\\kamu\\.cargo\\bin\\ghostblend.exe"
+    }
+  }
+}
+```
+
+**MCP: Add Server** di Command Palette memandu langkah yang sama. Pakai Copilot
+Chat dalam mode **Agent** untuk memanggil tool-nya.
+
+### Devin Desktop, dulu Windsurf
+
+Windsurf berganti nama menjadi Devin Desktop pada Juni 2026. Di panel Cascade,
+buka menu **...**, masuk ke bagian MCP, lalu pilih **Open MCP config file**.
+Cara ini membuka file yang tepat untuk versimu:
+
+- Windows: `%APPDATA%\devin\mcp_config.json`
+- macOS, Linux: `~/.config/devin/mcp_config.json`
+- Windsurf versi lama: `~/.codeium/windsurf/mcp_config.json`
+
+```json
+{
+  "mcpServers": {
+    "ghostblend": {
+      "command": "C:\\Users\\kamu\\.cargo\\bin\\ghostblend.exe"
+    }
+  }
+}
+```
+
+Simpan file, lalu aktifkan **ghostblend** di daftar MCP.
+
+### Gemini CLI
+
+```bash
+gemini mcp add --scope user ghostblend ghostblend
+```
+
+`ghostblend` yang pertama adalah nama, yang kedua adalah perintahnya. Atau edit
+`~/.gemini/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "ghostblend": {
+      "command": "ghostblend"
+    }
+  }
+}
+```
+
+### Zed
+
+Buka **Settings**, lalu **AI**, lalu **MCP Servers**, dan pilih **Add Server**
+dan **Add Local Server**, atau edit `settings.json` langsung:
+
+```json
+{
+  "context_servers": {
+    "ghostblend": {
+      "command": "C:\\Users\\kamu\\.cargo\\bin\\ghostblend.exe",
+      "args": [],
+      "env": {}
+    }
+  }
+}
+```
+
+### Aplikasi lain
+
+Kebanyakan aplikasi MCP lain, seperti Cline, Continue, dan LM Studio, menerima
+bentuk `mcpServers` yang sama seperti contoh Cursor. Kalau aplikasi meminta
+perintah, beri path lengkap ke `ghostblend`; kalau meminta transport, pilih
+**stdio**. Kalau aplikasi menghentikan panggilan tool terlalu cepat, hindari
+`render` dengan `wait=true` dan biarkan agent memantau `job_status`.
 
 ---
 
@@ -402,6 +624,7 @@ dipakai dan apakah mesin itu bisa menyala dan render.
 
 | Gejala | Yang perlu dilakukan |
 |---|---|
+| Aplikasi tidak menampilkan ghostblend | Pakai path lengkap ke file program, tutup dan buka lagi aplikasinya sepenuhnya, lalu baca log MCP-nya (lihat [Claude Desktop](#claude-desktop)) |
 | Tool bilang mesin sedang disiapkan | Tunggu unduhan pertama selesai, atau jalankan `ghostblend setup` di terminal untuk melihat progresnya |
 | Unduhan berhenti | Jalankan `ghostblend setup` lagi; unduhan dilanjutkan |
 | "Blender executable not found at ..." | Path di `--blender` atau `GHOSTBLEND_BLENDER` salah. Perbaiki, atau hapus supaya mesin bawaan dipakai |

@@ -22,6 +22,7 @@ Blender, open it, or add an add-on.
 - [Why it exists](#why-it-exists)
 - [What an agent can do](#what-an-agent-can-do)
 - [Quick start](#quick-start)
+- [Connect your agent](#connect-your-agent)
 - [Tool reference](#tool-reference)
 - [How it works](#how-it-works)
 - [The Blender engine](#the-blender-engine)
@@ -132,15 +133,24 @@ Typical uses:
 
 ## Quick start
 
-### 1. Build
+### 1. Install
 
-You need a [Rust toolchain](https://rustup.rs).
+There are no prebuilt downloads yet, so you build Ghostblend from source. You
+need a [Rust toolchain](https://rustup.rs). From the repository folder:
 
 ```bash
-cargo build --release
+cargo install --path .
 ```
 
-The executable is `target/release/ghostblend` (`ghostblend.exe` on Windows).
+This builds a release binary and puts `ghostblend` on your PATH:
+
+| System | Installed at |
+|---|---|
+| Windows | `C:\Users\<you>\.cargo\bin\ghostblend.exe` |
+| macOS, Linux | `~/.cargo/bin/ghostblend` |
+
+Prefer to keep it inside the repository? `cargo build --release` puts the same
+binary in `target/release/` instead.
 
 ### 2. Install the engine (optional)
 
@@ -171,32 +181,240 @@ ghostblend doctor
 
 ### 4. Connect your agent
 
-**Claude Code**
+Add Ghostblend to your AI app. The fastest route is Claude Code:
 
 ```bash
-claude mcp add ghostblend -- /path/to/ghostblend
+claude mcp add --scope user ghostblend -- ghostblend
 ```
 
-**Claude Desktop, Cursor, and other clients** use the same shape in their MCP
-configuration file (`claude_desktop_config.json`, `.cursor/mcp.json`, and so on):
+Every other app is covered step by step in [Connect your agent](#connect-your-agent).
+
+### 5. Try it
+
+Start a new chat or session and ask:
+
+> Use Ghostblend to add a monkey head with a gold material, then show me a preview.
+
+The agent should call `add_primitive`, `material_set` and `render_preview`, and
+the four-view image appears in the chat.
+
+---
+
+## Connect your agent
+
+Ghostblend is a local MCP server. Your AI app starts it in the background and
+talks to it over stdio, so you never run it by hand. You only tell the app where
+the executable is. No arguments are needed, because `serve` is the default.
+
+**Before you start:**
+
+- **Run `ghostblend setup` once** if you do not have Blender 4.2+ installed. The
+  first engine download is 414 MB. Tools work during the download, but they only
+  answer with its progress until it finishes.
+- **Use the full path in desktop apps.** Command-line tools find `ghostblend`
+  on your PATH. Desktop apps often start with a shorter PATH, so give them the
+  full path from the table in [Install](#1-install).
+- **Escape backslashes in JSON.** Write `C:\\Users\\you\\.cargo\\bin\\ghostblend.exe`
+  or `C:/Users/you/.cargo/bin/ghostblend.exe`.
+
+| App | Supported | Where you configure it |
+|---|---|---|
+| [Claude Code](#claude-code) | yes | `claude mcp add` |
+| [Claude Desktop](#claude-desktop) | yes | `claude_desktop_config.json` |
+| [ChatGPT desktop app and Codex](#chatgpt-desktop-app-and-codex) | yes | `~/.codex/config.toml` |
+| [ChatGPT on the web](#chatgpt-on-the-web) | not yet | needs a remote server |
+| [Cursor](#cursor) | yes | `mcp.json` |
+| [VS Code with GitHub Copilot](#vs-code-with-github-copilot) | yes | `mcp.json` |
+| [Devin Desktop, formerly Windsurf](#devin-desktop-formerly-windsurf) | yes | `mcp_config.json` |
+| [Gemini CLI](#gemini-cli) | yes | `gemini mcp add` |
+| [Zed](#zed) | yes | `settings.json` |
+| [Other apps](#other-apps) | usually | their MCP settings |
+
+### Claude Code
+
+```bash
+claude mcp add --scope user ghostblend -- ghostblend
+```
+
+`--scope user` makes Ghostblend available in all your projects. Leave it out to
+add it to the current project only, or use `--scope project` to write a
+`.mcp.json` you can commit for your team.
+
+Check it inside a session with `/mcp`, or from the terminal:
+
+```bash
+claude mcp list
+```
+
+Remove it with `claude mcp remove ghostblend`.
+
+### Claude Desktop
+
+1. Open the **Claude** menu in the system menu bar, not the settings inside the
+   chat window, and choose **Settings**.
+2. Go to **Developer** and click **Edit Config**. This opens
+   `claude_desktop_config.json`:
+   - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+   - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+3. Add Ghostblend under `mcpServers`, keeping any servers already there:
+
+   ```json
+   {
+     "mcpServers": {
+       "ghostblend": {
+         "command": "C:\\Users\\you\\.cargo\\bin\\ghostblend.exe"
+       }
+     }
+   }
+   ```
+
+   On macOS use `"/Users/you/.cargo/bin/ghostblend"`.
+4. Quit Claude Desktop completely and open it again.
+5. In a chat, click the **+** button, open **Connectors**, and check that
+   **ghostblend** is listed and switched on.
+
+If it does not appear, read the server log, which contains Ghostblend's own
+messages:
+
+- Windows: `%APPDATA%\Claude\logs\mcp-server-ghostblend.log`
+- macOS: `~/Library/Logs/Claude/mcp-server-ghostblend.log`
+
+### ChatGPT desktop app and Codex
+
+The ChatGPT desktop app, the Codex CLI and the Codex IDE extension share one MCP
+configuration, so adding Ghostblend once makes it available in all three.
+
+With the Codex CLI:
+
+```bash
+codex mcp add ghostblend -- ghostblend
+```
+
+Or edit `~/.codex/config.toml` yourself (`C:\Users\<you>\.codex\config.toml` on
+Windows):
+
+```toml
+[mcp_servers.ghostblend]
+command = 'C:\Users\you\.cargo\bin\ghostblend.exe'
+tool_timeout_sec = 300
+```
+
+The single quotes make TOML take the Windows path literally. Codex stops a tool
+call after 60 seconds by default; `tool_timeout_sec = 300` gives short final
+renders with `wait=true` time to finish. You can also add the server from the
+ChatGPT desktop app's MCP settings, which write to the same file.
+
+### ChatGPT on the web
+
+Not supported yet. ChatGPT in the browser only connects to remote MCP servers
+over HTTPS and cannot start a program on your computer, while Ghostblend
+currently runs locally over stdio. Use the ChatGPT desktop app instead, as
+described above.
+
+Do not work around this by exposing Ghostblend through a public tunnel:
+`run_python` would then let anyone who finds the URL run code on your machine.
+An HTTP transport with authentication is on the roadmap.
+
+### Cursor
+
+Edit `~/.cursor/mcp.json` for all projects, or `.cursor/mcp.json` in a project:
 
 ```json
 {
   "mcpServers": {
     "ghostblend": {
-      "command": "C:\\path\\to\\ghostblend.exe"
+      "command": "C:\\Users\\you\\.cargo\\bin\\ghostblend.exe"
     }
   }
 }
 ```
 
-No arguments are needed; `serve` is the default command. Relative paths the
-agent passes, such as `out/model.glb`, resolve against the directory the client
-starts Ghostblend in.
+Then open Cursor's MCP settings and make sure the **ghostblend** toggle is on.
 
-### 5. Try it
+### VS Code with GitHub Copilot
 
-Ask your agent to build something and to show you a preview.
+Run **MCP: Open User Configuration** from the Command Palette, or create
+`.vscode/mcp.json` in a workspace. VS Code uses `servers` as the top-level key:
+
+```json
+{
+  "servers": {
+    "ghostblend": {
+      "type": "stdio",
+      "command": "C:\\Users\\you\\.cargo\\bin\\ghostblend.exe"
+    }
+  }
+}
+```
+
+The Command Palette's **MCP: Add Server** walks you through the same thing.
+Use Copilot Chat in **Agent** mode to call the tools.
+
+### Devin Desktop, formerly Windsurf
+
+Windsurf was renamed Devin Desktop in June 2026. In the Cascade panel, open the
+**...** menu, go to the MCP section, and choose **Open MCP config file**. That
+opens the right file for your version:
+
+- Windows: `%APPDATA%\devin\mcp_config.json`
+- macOS, Linux: `~/.config/devin/mcp_config.json`
+- Older Windsurf builds: `~/.codeium/windsurf/mcp_config.json`
+
+```json
+{
+  "mcpServers": {
+    "ghostblend": {
+      "command": "C:\\Users\\you\\.cargo\\bin\\ghostblend.exe"
+    }
+  }
+}
+```
+
+Save the file, then switch **ghostblend** on in the MCP list.
+
+### Gemini CLI
+
+```bash
+gemini mcp add --scope user ghostblend ghostblend
+```
+
+The first `ghostblend` is the name and the second is the command. Or edit
+`~/.gemini/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "ghostblend": {
+      "command": "ghostblend"
+    }
+  }
+}
+```
+
+### Zed
+
+Open **Settings**, then **AI**, then **MCP Servers**, and choose **Add Server**
+and **Add Local Server**, or edit `settings.json` directly:
+
+```json
+{
+  "context_servers": {
+    "ghostblend": {
+      "command": "C:\\Users\\you\\.cargo\\bin\\ghostblend.exe",
+      "args": [],
+      "env": {}
+    }
+  }
+}
+```
+
+### Other apps
+
+Most other MCP apps, such as Cline, Continue and LM Studio, accept the same
+`mcpServers` shape shown for Cursor. If an app asks for a command, give it the
+full path to `ghostblend`; if it asks for a transport, choose **stdio**. If the
+app stops tool calls after a short time, avoid `render` with `wait=true` and let
+the agent poll `job_status` instead.
 
 ---
 
@@ -397,6 +615,7 @@ starts and renders.
 
 | Symptom | What to do |
 |---|---|
+| The app does not list ghostblend | Use the full path to the executable, fully restart the app, and read its MCP log (see [Claude Desktop](#claude-desktop)) |
 | Tools say the engine is being set up | Wait for the first download to finish, or run `ghostblend setup` in a terminal to watch progress |
 | The download stopped | Run `ghostblend setup` again; it resumes |
 | "Blender executable not found at ..." | The path in `--blender` or `GHOSTBLEND_BLENDER` is wrong. Fix it, or remove it to use the engine |
